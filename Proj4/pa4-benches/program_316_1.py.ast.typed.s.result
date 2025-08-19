@@ -1,0 +1,29 @@
+Game not started yet. Type Start to initialize
+Player 1, please enter a positive int value.
+int saved, now the second player can start guessing
+Valid commands are: Guess to guess an int, Greater to check Wheter the given number is greater, Less to check whether the given number is lesser, Div to check whether the secret number is divisible by the given.
+Please type a positive int value
+The number is divisible by
+2
+Please type a positive int value
+This number is not greater
+10
+Please type a positive int value
+This number is not greater
+50
+Please type a positive int value
+This number is greater
+200
+Please type a positive int value
+This number is greater
+120
+Please type a positive int value
+This number is not greater
+100
+Please type a positive int value
+This number is not lesser
+100
+Please type a positive int value
+You have guessed it right! The number of questions used are:
+7
+You can now start a new game.
