@@ -1,0 +1,901 @@
+package chocopy.pa2;
+
+import chocopy.common.analysis.AbstractNodeAnalyzer;
+import java.util.Set;
+ // treenode not added here yet
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Arrays;
+import java.util.HashSet;
+// bad_type_annotation
+// bad_class_method_invoke
+// bad_class_method
+// bad_class_init_return
+// func_def_call
+// bad_duplicate_local
+// class_def_methods
+// bad_return_missing
+// class_def_attr
+// class_def_assign
+// bad_duplicate_class
+
+// - Test: src/test/data/pa2/sample/bad_shadow_local_2.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_method_invoke.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_method.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_method_override_attr.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_init_return.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_method_override.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_duplicate_local.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_init_override.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_super.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_attr.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_nonlocal_global.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_shadow_local.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_attr_type.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_duplicate_global.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_class_member_expr.py.ast failed
+// - Test: src/test/data/pa2/sample/bad_duplicate_class.py.ast failed
+
+
+import chocopy.common.analysis.types.*;
+import chocopy.common.astnodes.*;
+import java_cup.runtime.Symbol;
+
+import static chocopy.common.analysis.types.Type.INT_TYPE;
+import static chocopy.common.analysis.types.Type.OBJECT_TYPE;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** Analyzer that performs ChocoPy type checks on all nodes.  Applied after
+ *  collecting declarations. */
+public class TypeChecker extends AbstractNodeAnalyzer<Type> {
+
+    // scope across levels
+    // class hierarchies 
+
+    /** The current symbol table (changes depending on the function
+     *  being analyzed). */
+    private VarTable<Type> sym;
+
+    /** The global symbol table. Added to make checking the scope easier. */
+    private final VarTable<Type> globals;
+
+    /* Keeps track of scope level and class hierarchies. 
+     * See: HierarchyTracker and VarTable for more.
+     */
+    private final HierarchyTracker htracker;
+
+    /** Global "class". Non-null for testing purposes. */
+    private final String globalClass = "0Global"; 
+
+    /** Collector for errors. */
+    private Errors errors;
+
+
+    private final DeclarationAnalyzer declarationAnalyzer;
+
+    // /** Creates a type checker using GLOBALSYMBOLS for the initial global
+    //  *  symbol table and ERRORS0 to receive semantic errors. */
+    // public TypeChecker(VarTable<Type> globalSymbols, Errors errors0) {
+    //     sym = globalSymbols;
+    //     globals = globalSymbols;
+    //     errors = errors0;
+    //     htracker = new HierarchyTracker();
+    //     htracker.addToScopeLevel(globalClass, sym);
+    //     allClasses = new HashSet<>();
+    // }
+
+    /** Creates a type checker using GLOBALSYMBOLS for the initial global
+     *  symbol table and ERRORS0 to receive semantic errors. */
+    public TypeChecker(VarTable<Type> globalSymbols, Errors errors0, HierarchyTracker tracker, DeclarationAnalyzer dec) {
+        sym = globalSymbols;
+        symNullCheck("typecheckeranalzy");
+        globals = globalSymbols;
+        errors = errors0;
+        htracker = tracker; 
+        declarationAnalyzer = dec;
+    }
+
+    public void symNullCheck(String funcNameString) {
+        if (sym == null) {
+            System.out.println("null sym on func in TypeChecker: [" + funcNameString + "]");
+        }
+    }
+
+    public void symNullCheck(String funcNameString, Declaration d) {
+        if (sym == null) {
+            System.out.println("null sym on declaration in TypeChecker: [" + d + "] at " + funcNameString);
+        }
+    }
+
+    public void declAnalyze(List<Declaration> declarations) {
+        for (Declaration d: declarations) {
+            if (d instanceof FuncDef) {
+                d.dispatch(this);
+            }
+            else {
+                declarationAnalyzer.handleDeclarations(d, sym);
+            }
+        }
+    }
+
+    public void declAnalyze(Declaration d) {
+        if (d instanceof FuncDef) {
+            d.dispatch(this);
+        }
+        else {
+            declarationAnalyzer.handleDeclarations(d, sym);
+        }
+    }
+
+    /** Inserts an error message in NODE if there isn't one already.
+     *  The message is constructed with MESSAGE and ARGS as for
+     *  String.format. */
+    private void err(Node node, String message, Object... args) {
+        errors.semError(node, message, args);
+    }
+    // java -cp "chocopy-ref.jar:target/assignment.jar" chocopy.ChocoPy \--pass=.s src/test/data/pa2/sample/strings.py.ast --test
+
+
+    @Override
+    public Type analyze(Program program) {
+        symNullCheck("program1");
+        // declAnalyze(program.declarations);
+        for (Declaration decl : program.declarations) {
+            if (decl instanceof FuncDef) {
+                decl.dispatch(this);
+            }
+        }
+        for (Stmt stmt : program.statements) {
+            stmt.dispatch(this);
+            symNullCheck("program3");
+        }
+        symNullCheck("program4");
+        return null;
+    }
+
+    /** Functions dedicated to analyzing declarations (i.e. adding to the symbol table). */
+
+    // public void handleDeclarations(List<Declaration> declarations) {
+    //     symNullCheck("handledecl1");
+    //     for (Declaration d: declarations) {
+    //         symNullCheck("handledecl2");
+    //         Type currDecl = d.dispatch(this); 
+    //         symNullCheck("handledecl3");
+    //         if (currDecl != null) {
+    //             String name = d.getIdentifier().name;
+    //             if (d instanceof VarDef) {
+    //                 if (name != null) {
+    //                     String declType = currDecl.className();
+    //                     if (sym.declares(name) || isInvalidName(name)) { 
+    //                         err(d.getIdentifier(),
+    //                                         "Duplicate declaration of identifier in same "
+    //                                         + "scope: %s",
+    //                                         name);
+    //                         ((VarDef)d).value.setInferredType(Type.OBJECT_TYPE);
+    //                     } 
+    //                     else if (!sym.declares(declType) && !isDeclaredType(declType)) {
+    //                         err(d.getIdentifier(), "Invalid type annotation; there is no class named: %s", declType);
+    //                         ((VarDef)d).value.setInferredType(Type.OBJECT_TYPE);
+    //                     }
+    //                     else {
+    //                         sym.put(name, currDecl);
+    //                         ((VarDef)d).value.setInferredType(currDecl);
+    //                     }
+    //                 }
+    //                 else {
+    //                     ((VarDef)d).value.setInferredType(currDecl);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
+
+    // @Override
+    // public Type analyze(ClassDef node) {
+    //     symNullCheck("class1");
+    //     String className = node.name.name;
+    //     VarTable<Type> newFunc = sym.getChildTable(className);
+    //     if (newFunc == null) {
+    //         newFunc = new VarTable<>(sym, true, className, false);
+    //     }
+    //     assert (newFunc.getParent().equals(sym));
+    //     sym = newFunc;
+        
+    //     for (Declaration d: node.declarations){
+    //         symNullCheck("class1");
+    //         Type currDecl = d.dispatch(this); 
+    //         d.getIdentifier().setInferredType(currDecl);
+    //         symNullCheck("class2");
+    //     }
+    //     sym = newFunc.getParent(); 
+    //     return null; 
+    // }
+
+
+    // @Override
+    // public Type analyze(VarDef node) {
+    //     assert (sym != null);
+    //     ValueType curr = ValueType.annotationToValueType(node.var.type);
+    //     String varType = curr.className(); // check if builtIn or declared
+    //     String varName = node.var.identifier.name;
+    //     if (!sym.declares(varType) && !isDeclaredType(varType)) {
+    //         err(node.getIdentifier(), "Invalid type annotation; there is no class named: %s", varType);
+    //         return node.value.setInferredType(Type.OBJECT_TYPE);
+    //     }
+    //     Type val = node.value.dispatch(this); 
+    //     node.value.setInferredType(val);
+    //     return curr;
+    // }
+
+
+    public void addSymbol(Identifier id, Type type) {
+        String name = id.name;
+        // if (type == null || decl instanceof ClassDef) {
+        //     return;
+        // }
+        if (type == null) {
+            return;
+        }
+
+        if (isInvalidName(name) || sym.declares(name)) {
+            err(id,
+                "Duplicate declaration of identifier in same "
+                + "scope: %s",
+                name);
+        }
+        else if (!sym.declares(type.className()) && !isBuiltInType(type.className())) {
+            err(id, "Invalid type annotation; there is no class named: %s", type.className());
+        }
+        else {
+            sym.put(name, type);
+        }
+    }
+
+
+    @Override
+    public Type analyze(FuncDef node) {
+        String funcNameString = node.name.name;
+        List<ValueType> params = new ArrayList<>();
+        ValueType returnType = ValueType.annotationToValueType(node.returnType);
+        for (int i = 0; i < node.params.size(); i += 1) {
+            params.add(ValueType.annotationToValueType(node.params.get(i).type));
+        }
+        FuncType ret = null;
+        if (params.size() == 0) {
+            ret = new FuncType(returnType);
+        }
+        else {
+            ret = new FuncType(params, returnType);
+        }
+        addSymbol(node.getIdentifier(), ret);
+        VarTable<Type> newFunc = new VarTable<Type>(sym, true, sym.getCurrentClass(), false);
+        sym.addToChildren(newFunc, node.name.name);
+        sym = newFunc;
+        declAnalyze(node.declarations);
+
+        boolean hasReturn = false;
+        for (Stmt s: node.statements){
+            symNullCheck(funcNameString + "[stmt1]");
+            Type stmtType = s.dispatch(this);
+            symNullCheck(funcNameString + "[stmt2]");
+            if (s instanceof ReturnStmt) {
+                hasReturn = true;
+                // todo: might have to set to false again afterwards due to how forstmt and stuff are done
+                if ((stmtType == null && returnType != null)
+                    || (stmtType != null && returnType == null)
+                    || ((stmtType != null && returnType != null) && !stmtType.equals(returnType))) {
+                        err(node, "Expected type `%s`; got type `%s`", returnType, stmtType);
+                    }
+            } // todo: set return type entry on returnstmt
+        }
+
+        if (hasReturn && returnType == null) {
+            err(node, "Missing return");
+        }
+
+        sym = newFunc.getParent();
+        return ret;
+    }
+
+
+    @Override
+    public Type analyze(ReturnStmt node) {
+        symNullCheck("rtn");
+        // currently does not handle current class having code past return statement (I.E. in while stmt)
+        Type rtn = null;
+        if (node != null) {
+            if (node.value != null){
+                rtn = node.value.dispatch(this);
+            }
+        }
+        symNullCheck("rtn2");
+        
+        String className = "";
+        if (rtn != null) {
+            className = rtn.className();
+        }
+        if (sym.getParent() == null) {
+            err(node, "Return statement cannot appear at the top level");
+            if (node.value != null) {
+                node.value.setInferredType(Type.OBJECT_TYPE);
+            }
+            return Type.OBJECT_TYPE;
+        }
+        else if (!sym.declares(className) && !isDeclaredType(className)) {
+            err(node, "Invalid type annotation; there is no class named: %s", className);
+            if (node.value != null) {
+                node.value.setInferredType(Type.OBJECT_TYPE);
+            }
+            return Type.OBJECT_TYPE;
+            
+        }
+        if (node.value != null) {
+            node.value.setInferredType(rtn);
+        }
+        symNullCheck("rtn3");
+        return rtn;
+    }
+
+    @Override
+    public Type analyze(WhileStmt node) {
+        symNullCheck("while");
+        VarTable<Type> newFunc = new VarTable<>(sym, false, sym.getCurrentClass(), false);
+        sym = newFunc;
+        Type cond = node.condition.dispatch(this);
+        node.condition.setInferredType(cond);
+        for (Stmt b : node.body) {
+            b.dispatch(this);
+        }
+        
+        Type ret = node.condition.setInferredType(cond);
+        sym = newFunc.getParent();
+        return ret;
+    }
+
+    @Override
+    public Type analyze(IfStmt node) {
+        symNullCheck("ifstmt");
+        VarTable<Type> newFunc = new VarTable<>(sym, false, sym.getCurrentClass(), false);
+        sym = newFunc;
+        Type cond = node.condition.dispatch(this);
+        node.condition.setInferredType(cond);
+        for (Stmt t : node.thenBody) {
+            t.dispatch(this);
+        }
+        
+        for (Stmt e : node.elseBody) {
+            e.dispatch(this);
+        }
+        Type ret = node.condition.setInferredType(cond);
+        sym = newFunc.getParent();
+        return ret;
+    }
+ 
+   @Override
+    public Type analyze(ForStmt node) {
+        symNullCheck("for");
+        Type id = node.identifier.dispatch(this);
+        node.identifier.setInferredType(id);
+        Type iter = node.iterable.dispatch(this);
+        node.iterable.setInferredType(iter);
+        if (Type.STR_TYPE.equals(iter)){
+            node.identifier.setInferredType(Type.STR_TYPE);
+        }
+        VarTable<Type> newFunc = new VarTable<>(sym, false, sym.getCurrentClass(), false);
+        sym = newFunc;
+        if (node.identifier != null) {
+            Type anticipatedType = node.identifier.getInferredType();
+            if (sym.declares(node.identifier.name) || isInvalidName(node.identifier.name)) { 
+                err(node.identifier,
+                                "Duplicate declaration of identifier in same "
+                                + "scope: %s",
+                                node.identifier.name);
+            }
+            else if (!sym.declares(anticipatedType.className()) && !isDeclaredType(anticipatedType.className())) {
+                err(node.identifier, "Invalid type annotation; there is no class named: %s", anticipatedType);
+            } 
+            else {
+                sym.put(node.identifier.name, anticipatedType);
+            }
+        }
+        for (Stmt b : node.body){
+            b.dispatch(this);
+        }
+        Type curr = iter;
+        if (node.iterable != null) {
+            curr = node.iterable.setInferredType(iter);
+        }
+        sym = newFunc.getParent();
+        return curr;
+    }
+
+    /** Functions dedicated to analyzing regular nodes (i.e. checking the symbol table, expressions, etc.). */
+
+    @Override
+    public Type analyze(ExprStmt s) {
+        symNullCheck("exprstmt");
+        s.expr.dispatch(this);
+        return s.expr.getInferredType();
+    }
+
+    @Override
+    public Type analyze(IntegerLiteral node) {
+        return node.setInferredType(Type.INT_TYPE);
+    }
+
+    @Override
+    public Type analyze(BooleanLiteral node) {
+        return node.setInferredType(Type.BOOL_TYPE);
+    }
+
+    @Override
+    public Type analyze(NoneLiteral node) {
+        return node.setInferredType(Type.NONE_TYPE);
+    }
+    
+    @Override
+    public Type analyze(StringLiteral node) {
+        return node.setInferredType(Type.STR_TYPE);
+    }
+
+    // @Override
+    // public Type analyze(ListType node) {
+    //     return node.setInferredType(new ListValueType(node));
+    // }
+
+
+    @Override
+    public Type analyze(TypedVar node) {
+        String name = node.identifier.name;
+        if (sym.get(name) == null) {
+            err(node.identifier, "Invalid type annotation; there is no class named: %s", name);
+        }
+        return ValueType.annotationToValueType(node.type);
+    }
+
+    @Override
+    public Type analyze(Identifier id) {
+        symNullCheck("id");
+        String varName = id.name;
+        Type varType = sym.get(varName);
+        if (varType == Type.OBJECT_TYPE) {
+            varType = sym.get(varName);
+            if (varType == null) {
+                varType = Type.OBJECT_TYPE;
+            }
+
+        }
+
+        if (varType != null && isDeclaredType(varType.className())) {
+            return id.setInferredType(varType);
+        }
+        else if (varType != null && (varType.isValueType())) {
+            return id.setInferredType(varType);
+        } 
+        else if (varType != null && !Type.OBJECT_TYPE.equals(varType) && varName.equals("self")) {
+            return id.setInferredType(varType);
+        }
+        else if (varName.equals("self")) {
+            return id.setInferredType(new ClassValueType("self")); // let be assigned within calls
+        }
+        err(id, "Not a variable: %s", varName);
+        // err(id, "Not a variable: %s", id.kind);
+        return id.setInferredType(ValueType.OBJECT_TYPE);
+    }
+
+    @Override
+    public Type analyze(IndexExpr node) { 
+        symNullCheck("indexexpr");
+        Type list = node.list.dispatch(this);
+        Type ind = node.index.dispatch(this);
+
+        if (list == null || (!list.isListType() && !Type.STR_TYPE.equals(list))) {
+            err(node, "Cannot index into type `%s`", list);
+            return node.setInferredType(Type.OBJECT_TYPE); 
+        } 
+        else if (!Type.INT_TYPE.equals(ind)){
+            err(node, "Index is of non-integer type `%s`", ind);
+            return node.setInferredType(Type.OBJECT_TYPE); 
+        } 
+        else if (list.isListType()) {
+            return node.setInferredType(((ListValueType)list).elementType());
+        } 
+        return node.setInferredType(list);
+    }
+
+    @Override
+    public Type analyze(UnaryExpr node) {
+        symNullCheck("unary");
+        Type operand = node.operand.dispatch(this);
+        if (node.operator.equals("-") && Type.INT_TYPE.equals(operand)) {
+            return node.setInferredType(Type.INT_TYPE);
+        }
+        else if (node.operator.equals("not") && Type.BOOL_TYPE.equals(operand)) {
+            return node.setInferredType(Type.BOOL_TYPE);
+        }
+        else {
+            err(node, "Cannot apply operator `%s` on type `%s`",
+                node.operator, operand);
+            return node.setInferredType(Type.OBJECT_TYPE);
+        }
+    }
+
+    @Override
+    public Type analyze(BinaryExpr e) {
+        symNullCheck("binaryexpr");
+        Type t1 = e.left.dispatch(this);
+        Type t2 = e.right.dispatch(this);
+
+        boolean t1_invalid = Type.NONE_TYPE.equals(t1) || Type.EMPTY_TYPE.equals(t1);
+        boolean t2_invalid = Type.NONE_TYPE.equals(t2) || Type.EMPTY_TYPE.equals(t2);
+
+        if (t1_invalid || t2_invalid) {
+            err(e, "Cannot apply operator `%s` on types `%s` and `%s`",
+                    e.operator, t1, t2);
+            return e.setInferredType(Type.OBJECT_TYPE);
+        }
+
+        switch (e.operator) {
+        case "+":
+            if (Type.STR_TYPE.equals(t1) && 
+                (Type.OBJECT_TYPE.equals(t2) 
+                || Type.STR_TYPE.equals(t2)
+                || Type.BOOL_TYPE.equals(t2))) {
+                return e.setInferredType(Type.STR_TYPE);
+            } 
+            else if (Type.INT_TYPE.equals(t1) && Type.INT_TYPE.equals(t2)) {
+                return e.setInferredType(Type.INT_TYPE);
+            } 
+            else if (e.left instanceof ListExpr && e.right instanceof ListExpr) {
+                if (t1.equals(t2)) {
+                    return e.setInferredType(t1);
+                }
+                else {
+                    // lists with different types of entries
+                    ListValueType newType = new ListValueType(Type.OBJECT_TYPE);
+                    return e.setInferredType(newType);
+                }
+
+            }
+            else {
+                err(e, "Cannot apply operator `%s` on types `%s` and `%s`",
+                    e.operator, t1, t2);
+                return e.setInferredType(Type.OBJECT_TYPE);
+            }
+        case "-":
+        case "/": // might not be supported in ChocoPy
+        case "*":
+        case "//":
+        case "%":
+            if (Type.INT_TYPE.equals(t1) && Type.INT_TYPE.equals(t2)) {
+                return e.setInferredType(Type.INT_TYPE);
+            } 
+            else {
+                err(e, "Cannot apply operator `%s` on types `%s` and `%s`",
+                    e.operator, t1, t2);
+                return e.setInferredType(Type.OBJECT_TYPE);
+            }
+        case "or":
+        case "and":
+            if (Type.BOOL_TYPE.equals(t1) && Type.BOOL_TYPE.equals(t2)) {
+                return e.setInferredType(Type.BOOL_TYPE);
+            }
+            else {
+                err(e, "Cannot apply operator `%s` on types `%s` and `%s`",
+                    e.operator, t1, t2);
+                return e.setInferredType(Type.OBJECT_TYPE);
+            }
+        case "==":
+        case "!=":
+            if (Type.BOOL_TYPE.equals(t1) && Type.BOOL_TYPE.equals(t2)) {
+                return e.setInferredType(Type.BOOL_TYPE);
+            } 
+        case ">":
+        case "<":
+        case ">=":
+        case "<=":
+            if (Type.INT_TYPE.equals(t1) && Type.INT_TYPE.equals(t2)) {
+                return e.setInferredType(Type.BOOL_TYPE);
+            }
+            else {
+                err(e, "Cannot apply operator `%s` on types `%s` and `%s`",
+                    e.operator, t1, t2);
+                return e.setInferredType(Type.OBJECT_TYPE);
+            }
+        default:
+            err(e, "Cannot apply operator `%s` on types `%s` and `%s`",
+                    e.operator, t1, t2);
+            return e.setInferredType(Type.OBJECT_TYPE);
+        }
+    }
+
+    @Override
+    public Type analyze(ListExpr e) {
+        symNullCheck("listexpr");
+        Type curr = Type.OBJECT_TYPE;
+        Type prev = curr;
+        boolean assign_obj = false;
+        for (int i = 0; i < e.elements.size(); i += 1) {
+            prev = curr;
+            curr = e.elements.get(i).dispatch(this);
+            if (prev != curr && i == 1) {
+                assign_obj = true;
+            }
+        }
+        if (e.elements.size() == 0) {
+            curr = Type.EMPTY_TYPE;
+            return e.setInferredType(curr);
+        }
+        else if (assign_obj) {
+            // list has not just one type of value (ex [1, True])
+            ListValueType newType = new ListValueType(Type.OBJECT_TYPE);
+            return e.setInferredType(newType);
+        }
+        else {
+            ListValueType newType = new ListValueType(curr);
+            return e.setInferredType(newType);
+        }
+    }
+
+    @Override
+    public Type analyze(AssignStmt node) { 
+        symNullCheck("assignstmt");
+        Type rhs = node.value.dispatch(this);
+        Expr curr = null;
+        Type curr_type = null;
+        String name = "";
+        for (int i = 0; i < node.targets.size(); i += 1) {
+            curr = node.targets.get(i);
+            curr_type = curr.dispatch(this);
+            Type varType = null;
+            if (curr instanceof Identifier) {
+                varType = sym.get(((Identifier)curr).name);
+                name = ((Identifier)curr).name;
+                
+                if (varType != null && !varType.equals(curr_type)) {
+                    err(node, "Double check this. Expected type `%s`; got type `%s`", curr_type, rhs);
+                } 
+            }  
+            else if (curr instanceof IndexExpr) {
+                if (Type.STR_TYPE.equals(curr_type)) {
+                    curr.setInferredType(Type.OBJECT_TYPE);
+                }
+            }
+            Type expected = sym.get(name);
+            // System.out.println("Expected type: [" + expected + "] for varDef: [" + name + "]");
+            boolean validTypes = isSupersetType(curr_type, rhs);
+            if ((curr_type != null && !curr_type.isListType()) && (rhs != null && rhs.isListType())) {
+                err(node, "`%s` is not a list type", curr_type);
+                curr.setInferredType(Type.OBJECT_TYPE);
+            }
+            else if ((expected != null && !expected.isListType()) && (rhs != null && rhs.isListType())) {
+                err(node, "`%s` is not a list type", curr_type);
+                curr.setInferredType(Type.OBJECT_TYPE);
+            }
+            else if ((expected != null && !expected.isListType()) && (curr_type != null && curr_type.isListType())) {
+                err(node, "`%s` is not a list type", curr_type);
+                curr.setInferredType(Type.OBJECT_TYPE);
+            }
+            else if (expected != null && isSupersetType(expected, curr_type) && isSupersetType(expected, rhs)) {
+                // rhs = expected;
+                // validTypes = true;
+                // System.out.println("hit on var [" + curr + "]");
+                curr.setInferredType(expected);
+            }
+            else if (validTypes) {
+                curr.setInferredType(rhs);
+                // curr.setInferredType(curr_type);
+            }
+            // else if (curr_type.equals(Type.OBJECT_TYPE)) {
+            //     curr.setInferredType(Type.OBJECT_TYPE);
+            // }
+            else {
+                err(node, "Expected type `%s`; got type `%s`", curr_type, rhs);
+                curr.setInferredType(Type.OBJECT_TYPE);
+            }
+        }
+        return node.value.setInferredType(rhs);
+    }
+
+   @Override
+    public Type analyze(IfExpr node) {
+        symNullCheck("ifexpr");
+        Type if_cond = node.condition.dispatch(this);
+        Type then_cond = node.thenExpr.dispatch(this);
+        Type else_cond = node.elseExpr.dispatch(this);
+        if (!Type.BOOL_TYPE.equals(if_cond)) {
+            err(node, "The conditionals are not conditionals on IfExpr: %s", if_cond);
+            return node.setInferredType(Type.OBJECT_TYPE);
+        }
+        if (then_cond != null && !then_cond.equals(else_cond)) {
+            return node.setInferredType(Type.OBJECT_TYPE);
+        }
+        return node.setInferredType(then_cond);    
+    }
+    
+    @Override
+    public Type analyze(MemberExpr node) {
+        symNullCheck("memberexpr");
+        Type objType = node.object.dispatch(this);
+
+        ClassValueType currType = null; 
+
+        // 1) check scope with VarTable<> get
+        // 2) check class inheritance with TreeNode get
+
+        if (objType instanceof ClassValueType) {
+            currType = (ClassValueType)objType;
+        }
+        else {
+            currType = (ClassValueType)node.object.getInferredType();
+        }
+
+        if (!(node.object instanceof Identifier)) {
+            err(node, "Invalid member expression: `%s`", node);
+            return node.setInferredType(Type.OBJECT_TYPE);
+        }
+        String className = node.object.getInferredType().className();
+        String memberName = node.member.name;
+        if (currType != null && currType.className().equals("self")) { // flag
+            // search sym for memberName, then look in the hTracker for parent classes that support it otherwise
+            // this approach uses 
+            TreeNode t = htracker.findMemberNode(memberName, sym.getNode());
+            if (t != null) {
+                Type currID = t.getSymbol(memberName);
+                node.object.setInferredType(new ClassValueType(className)); // set class type
+                return node.setInferredType(currID);
+            }
+            else {
+                err((Identifier)node.object, "There is no attribute named `%s` in class `%s`", memberName, className);
+                return node.setInferredType(Type.OBJECT_TYPE);
+            }
+        }
+        else if (currType != null && !currType.className().equals("self")) {
+            return node.setInferredType(currType);
+        }
+
+        Type currID = null;
+        TreeNode t = htracker.findClassNode(className, memberName, htracker.getRoot(), false);
+        if (t != null) {
+            currID = t.getSymbol(memberName);
+            return node.setInferredType(currID);
+        }
+        else {
+            err((Identifier)node.object, "There is no attribute named `%s` in class `%s`", memberName, className);
+            return node.setInferredType(Type.OBJECT_TYPE);
+        }
+    }
+
+    @Override
+    public Type analyze(MethodCallExpr node) {
+        symNullCheck("methodcallexpr");
+        Type methodType = node.method.object.dispatch(this);
+        String methodName = node.method.member.name;
+        Type currID = null;
+        TreeNode t = htracker.findClassNode(methodType.className(), methodName, htracker.getRoot(), false);
+        if (t != null) {
+            Type curr = t.getSymbol(methodName);
+            if (curr instanceof FuncType) {
+                FuncType func = (FuncType)curr;
+                currID = func.returnType;
+            }
+
+            currID = curr;
+            return node.setInferredType(currID); // probably error otherwise
+        }
+        err(node.method.member, "There is no attribute named `%s` in class `%s`", methodName, methodType.className());
+        return node.setInferredType(Type.OBJECT_TYPE);
+    }
+
+    @Override
+    public Type analyze(CallExpr node) { 
+        symNullCheck("callexpr");
+        // Calls on functions not associated with classes
+        Identifier funcName = node.function;
+        VarTable<Type> globals = getGlobals();
+        Type funcType = globals.get(funcName.name);
+        for (Expr e: node.args){
+            Type exprType = e.dispatch(this);
+            e.setInferredType(exprType);
+        }
+        return node.setInferredType(funcType);
+    }
+
+    /** Helpers. */
+    
+    /* Returns True if SUB is a subset of SUPERSET. For use when checking entries of lists in analyze(AssignStmt node).
+     * Ex: if SUPER is Type.OBJECT_TYPE, isSupersetType returns True for everything
+     * Ex: if SUB is Type.NONE_TYPE returns True for every value of SUPER
+     * For this, INT is NOT a subset of BOOL
+    */
+    public boolean isSupersetType(Type superset, Type subset) {
+        Type superset_type = superset;
+        Type subset_type = subset;
+    
+        if (superset == null) {
+            return false;
+        }
+        else if (superset == null || subset == null) {
+            return false;
+        }
+        if (superset.equals(subset)) {
+            return true;
+        }
+
+
+        if (superset instanceof ListValueType || superset.isListType()) {
+            superset_type = ((ListValueType)superset).elementType();
+        }
+        if (subset instanceof ListValueType || subset.isListType()) {
+            subset_type = ((ListValueType)subset).elementType();
+        }
+
+        
+        if (superset.isListType() && subset.isListType()) {
+            if (subset_type.equals(superset_type)
+            || (subset_type.equals(Type.EMPTY_TYPE) || subset_type.equals(Type.NONE_TYPE))) 
+            {
+                return true;
+            }
+        }
+        else if ((superset.isListType() && !subset.isListType())) {
+            if (superset_type.equals(subset) 
+            || superset_type.equals(Type.OBJECT_TYPE)
+            || subset.equals(Type.NONE_TYPE) 
+            || subset.equals(Type.EMPTY_TYPE)) 
+            {
+                return true;
+            }
+        }
+        else if (!superset.isListType() && subset.isListType()) {
+            if (superset.equals(Type.OBJECT_TYPE)) {
+                return true;
+            }
+        }
+        else if (superset_type.equals(Type.OBJECT_TYPE)) {
+            return true;
+        }
+        return false;
+    }
+
+    /* For use with GlobalDecl's analyze function. */
+    public VarTable<Type> getGlobals() {
+        return globals;
+    }
+
+    /* Used to check if the current FuncDef is part of a class and therefore needs the "self" param. 
+     * Works by checking if the current symbol table is the global symbol table or not. 
+    */
+    public boolean isClassMethod() {
+        return !globals.equals(sym);
+    }
+
+    public boolean isInvalidName(String name) {
+        List<String> invalidNames = Arrays.asList("self", "int", "bool", "char", "def", "True", "False", "None", "and", "as", 
+        "assert", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", 
+        "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "print", 
+        "raise", "return", "try", "while", "with", "yield", "float", "id", "len", "max", "min", "pow", 
+        "range", "round", "str", "type");
+        if (invalidNames.contains(name)) {
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isBuiltInType(String name) {
+        List<String> types = Arrays.asList("int", "bool", "char", "float", "str", "object", "<None>"); // "list"?
+        if (types.contains(name) || name == null) { // returned when ValueType type.className() gives a null because of not being from a "class"
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isDeclaredType(String name) {
+        return isBuiltInType(name) || htracker.getAllClasses().contains(name);
+    }
+
+}

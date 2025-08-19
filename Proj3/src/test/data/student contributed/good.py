@@ -1,0 +1,6 @@
+print("Hello world")
+print("12")
+print(12)
+print(True)
+print(False)
+print(None)
